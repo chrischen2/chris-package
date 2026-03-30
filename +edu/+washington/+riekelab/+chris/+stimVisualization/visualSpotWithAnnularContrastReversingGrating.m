@@ -8,8 +8,8 @@ brightBarContrast = 0.1;    % Ap: scales positive half of sinusoid
 darkBarContrast = -1;    % An = abs(-0.75): scales negative half
 temporalFrequency = 1;      % Hz
 
-apertureDiameter = 300;
-annulusInnerDiameter = 300;
+apertureDiameter = 1;
+annulusInnerDiameter = 1;
 annulusOuterDiameter = 600;
 barWidth = 150;
 
