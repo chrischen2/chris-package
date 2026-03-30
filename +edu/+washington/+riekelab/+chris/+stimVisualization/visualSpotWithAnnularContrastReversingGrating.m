@@ -4,14 +4,15 @@ clear; close all; clc;
 %% Parameters
 backgroundIntensity = 0.15;
 spotIntensity = 0.05;
-brightBarContrast = 0.1;    % Ap: scales positive half of sinusoid
-darkBarContrast = -1;    % An = abs(-0.75): scales negative half
-temporalFrequency = 1;      % Hz
+brightBarContrast = 0.9;    % Ap: scales positive half of sinusoid
+darkBarContrast = -0.75;    % An = abs(): scales negative half
+temporalFrequency = 2;      % Hz
+temporalClass = 'sinewave'; % 'sinewave' or 'squarewave'
 
-apertureDiameter = 1;
-annulusInnerDiameter = 1;
-annulusOuterDiameter = 600;
-barWidth = 150;
+apertureDiameter = 300;
+annulusInnerDiameter = 400;
+annulusOuterDiameter = 800;
+barWidth = 60;
 
 preTime = 500;   % ms
 stimTime = 2000; % ms
@@ -61,6 +62,9 @@ for i = 1:length(timeVec)
 
     if inStim
         s = cos(2 * pi * temporalFrequency * t);
+        if strcmp(temporalClass, 'squarewave')
+            s = sign(s);
+        end
         % Asymmetric waveform: scale positive half by Ap, negative half by An
         if s >= 0
             brightTrace(i) = backgroundIntensity * (1 + Ap * s);
@@ -85,6 +89,9 @@ for i = 1:length(timeVec)
     % --- Compute current frame ---
     if inStim
         s = cos(2 * pi * temporalFrequency * t);
+        if strcmp(temporalClass, 'squarewave')
+            s = sign(s);
+        end
         if s >= 0
             frame = meanImage ...
                   + brightMaskScaled * (Ap * s) ...
@@ -104,7 +111,7 @@ for i = 1:length(timeVec)
     subplot(2, 2, 1);
     imagesc(frame, [0 0.4]);
     colormap(gray); axis image off;
-    title(sprintf('Full frame  t = %.3f s', timeVec(i)));
+    title(sprintf('Full frame  t = %.3f s  [%s]', timeVec(i), temporalClass));
 
     % --- Subplot 2: Zoomed annulus ---
     subplot(2, 2, 2);
@@ -133,7 +140,7 @@ for i = 1:length(timeVec)
     hold off;
     xlim([0 totalTime]); ylim([0 0.4]);
     xlabel('Time (s)'); ylabel('Intensity');
-    title(sprintf('Dark bar (180° out of phase)', An, Ap));
+    title(sprintf('Dark bar (180 deg out of phase)'));
     xline(preTime*1e-3, 'g--'); xline((preTime+stimTime)*1e-3, 'g--');
 
     drawnow;
@@ -147,11 +154,12 @@ yline(backgroundIntensity, 'k--', 'background');
 xline(preTime*1e-3, 'g--', 'stim on');
 xline((preTime+stimTime)*1e-3, 'g--', 'stim off');
 xlabel('Time (s)'); ylabel('Intensity');
-title('Bright (red) vs Dark (blue) — asymmetric sinusoid, 180° out of phase');
+title(sprintf('Bright (red) vs Dark (blue) — %s, 180 deg out of phase', temporalClass));
 legend('Bright bar', 'Dark bar', 'Location', 'best');
 ylim([0 0.4]); hold off;
 
 fprintf('\n--- Verification ---\n');
+fprintf('temporalClass = %s\n', temporalClass);
 fprintf('Ap (brightBarContrast) = %.2f\n', Ap);
 fprintf('An (|darkBarContrast|) = %.2f\n', An);
 fprintf('Background = %.3f\n', backgroundIntensity);
