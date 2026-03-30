@@ -5,13 +5,13 @@ clear; close all; clc;
 backgroundIntensity = 0.15;
 spotIntensity = 0.05;
 brightBarContrast = 0.1;    % Ap: scales positive half of sinusoid
-darkBarContrast = -0.8;    % An = abs(-0.75): scales negative half
-temporalFrequency = 2;      % Hz
+darkBarContrast = -1;    % An = abs(-0.75): scales negative half
+temporalFrequency = 1;      % Hz
 
 apertureDiameter = 300;
-annulusInnerDiameter = 400;
-annulusOuterDiameter = 800;
-barWidth = 60;
+annulusInnerDiameter = 300;
+annulusOuterDiameter = 600;
+barWidth = 150;
 
 preTime = 500;   % ms
 stimTime = 2000; % ms
