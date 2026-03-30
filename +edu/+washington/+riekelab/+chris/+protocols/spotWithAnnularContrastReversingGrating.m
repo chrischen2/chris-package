@@ -10,6 +10,7 @@ classdef spotWithAnnularContrastReversingGrating < edu.washington.riekelab.proto
         brightBarContrast = [0.9]  % positive peak of asymmetric contrast waveform
         darkBarContrast = [-0.25 -0.5 -0.75 -1.0]  % negative peak of asymmetric contrast waveform
         temporalFrequency = [2 4]  % Hz, temporal frequency of contrast reversal
+        temporalClass = 'sinewave'  % temporal waveform: sinewave or squarewave
 
         preTime = 1000   % ms
         stimTime = 2000  % ms
@@ -28,6 +29,7 @@ classdef spotWithAnnularContrastReversingGrating < edu.washington.riekelab.proto
         brightBarContrastType = symphonyui.core.PropertyType('denserealdouble', 'matrix')
         darkBarContrastType = symphonyui.core.PropertyType('denserealdouble', 'matrix')
         temporalFrequencyType = symphonyui.core.PropertyType('denserealdouble', 'matrix')
+        temporalClassType = symphonyui.core.PropertyType('char', 'row', {'sinewave', 'squarewave'})
         onlineAnalysisType = symphonyui.core.PropertyType('char', 'row', {'none', 'extracellular', 'exc', 'inh'})
         currentBarWidth
         currentBrightContrast
@@ -200,6 +202,11 @@ classdef spotWithAnnularContrastReversingGrating < edu.washington.riekelab.proto
         function imgMat = getGratingFrame(obj, time)
             t = time - obj.preTime * 1e-3;  % time relative to stimulus onset
             s = cos(2 * pi * obj.currentTemporalFrequency * t);
+
+            % For squarewave: snap to +1 or -1
+            if strcmp(obj.temporalClass, 'squarewave')
+                s = sign(s);
+            end
 
             Ap = obj.currentBrightContrast;
             An = abs(obj.currentDarkContrast);
