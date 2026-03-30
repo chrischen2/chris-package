@@ -7,8 +7,8 @@ classdef spotWithAnnularContrastReversingGrating < edu.washington.riekelab.proto
 
         backgroundIntensity = 0.15  % 0-1, background and gap intensity
         spotIntensity = 0.05  % 0-1, intensity of center spot
-        brightBarContrast = [0.9]  % peak contrast amplitude for bright bars
-        darkBarContrast = [-0.25 -0.5 -0.75 -1.0]  % peak contrast amplitude for dark bars
+        brightBarContrast = [0.9]  % positive peak of asymmetric contrast waveform
+        darkBarContrast = [-0.25 -0.5 -0.75 -1.0]  % negative peak of asymmetric contrast waveform
         temporalFrequency = [2 4]  % Hz, temporal frequency of contrast reversal
 
         preTime = 1000   % ms
@@ -107,8 +107,8 @@ classdef spotWithAnnularContrastReversingGrating < edu.washington.riekelab.proto
 
             apertureDiameterPix = obj.rig.getDevice('Stage').um2pix(obj.apertureDiameter);
 
-            % Initial image: mean (background) everywhere — no modulation at t=0
-            initialImage = uint8(obj.meanImage * 255);
+            % Initial image: at t=0 cos=1, bright bars at bright peak, dark bars at dark peak
+            initialImage = uint8(max(0, min(255, round((obj.meanImage + obj.modulationImage) * 255))));
             scene = stage.builtin.stimuli.Image(initialImage);
             scene.size = canvasSize;
             scene.position = canvasSize/2;
@@ -158,27 +158,49 @@ classdef spotWithAnnularContrastReversingGrating < edu.washington.riekelab.proto
             r = sqrt(x.^2 + y.^2);
             annulusMask = (r >= annulusInnerDiameterPix/2) & (r <= annulusOuterDiameterPix/2);
 
-            % Mean image: background everywhere
-            obj.meanImage = obj.backgroundIntensity * ones(size(grating));
+            % Asymmetric contrast-reversing sinusoid decomposition:
+            % Both bright and dark bars use the SAME asymmetric temporal
+            % waveform but 180 deg out of phase. The waveform oscillates
+            % between brightBarContrast (positive peak) and darkBarContrast
+            % (negative peak).
+            %
+            % meanContrast = (bright + dark) / 2  (DC offset of the waveform)
+            % ampContrast  = (bright - dark) / 2  (half-amplitude of swing)
+            %
+            % Bright bars: background * (1 + meanContrast + ampContrast * cos(2*pi*f*t))
+            %   -> at t=0: background * (1 + brightBarContrast)  [bright peak]
+            %   -> at t=T/2: background * (1 + darkBarContrast)  [dark peak]
+            %
+            % Dark bars: background * (1 + meanContrast - ampContrast * cos(2*pi*f*t))
+            %   -> at t=0: background * (1 + darkBarContrast)    [dark peak]
+            %   -> at t=T/2: background * (1 + brightBarContrast) [bright peak]
+            %
+            % This preserves the bright-to-dark intensity ratio at all times.
 
-            % Modulation image: per-pixel amplitude of sinusoidal modulation
-            % Non-zero only within the annulus
+            meanContrast = (obj.currentBrightContrast + obj.currentDarkContrast) / 2;
+            ampContrast  = (obj.currentBrightContrast - obj.currentDarkContrast) / 2;
+
+            % Mean image: background in non-annulus, shifted mean in annulus
+            obj.meanImage = obj.backgroundIntensity * ones(size(grating));
+            obj.meanImage(annulusMask) = obj.backgroundIntensity * (1 + meanContrast);
+
+            % Modulation image: cos amplitude per pixel (bright bars +, dark bars -)
             obj.modulationImage = zeros(size(grating));
-            obj.modulationImage(brightBars & annulusMask) = obj.backgroundIntensity * obj.currentBrightContrast;
-            obj.modulationImage(darkBars & annulusMask) = obj.backgroundIntensity * obj.currentDarkContrast;
+            obj.modulationImage(brightBars & annulusMask) =  obj.backgroundIntensity * ampContrast;
+            obj.modulationImage(darkBars & annulusMask)   = -obj.backgroundIntensity * ampContrast;
 
             % Warn if peak modulation would produce out-of-range values
-            peakMax = max(obj.meanImage(:) + abs(obj.modulationImage(:)));
-            peakMin = min(obj.meanImage(:) - abs(obj.modulationImage(:)));
-            if peakMax > 1 || peakMin < 0
-                warning('Grating intensity may go out of range: peak max = %.3f, peak min = %.3f', ...
-                    peakMax, peakMin);
+            peakHigh = obj.backgroundIntensity * (1 + obj.currentBrightContrast);
+            peakLow  = obj.backgroundIntensity * (1 + obj.currentDarkContrast);
+            if peakHigh > 1 || peakLow < 0
+                warning('Grating intensity out of range: bright peak = %.3f, dark peak = %.3f', ...
+                    peakHigh, peakLow);
             end
         end
 
         function imgMat = getGratingFrame(obj, time)
             t = time - obj.preTime * 1e-3;  % time relative to stimulus onset
-            modulation = sin(2 * pi * obj.currentTemporalFrequency * t);
+            modulation = cos(2 * pi * obj.currentTemporalFrequency * t);
             imgMat = obj.meanImage + obj.modulationImage * modulation;
             % Clamp to valid range and convert to uint8
             imgMat = uint8(max(0, min(255, round(imgMat * 255))));
