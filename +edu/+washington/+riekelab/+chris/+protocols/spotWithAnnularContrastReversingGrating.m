@@ -35,7 +35,8 @@ classdef spotWithAnnularContrastReversingGrating < edu.washington.riekelab.proto
         currentTemporalFrequency
         stimSequence
         meanImage
-        modulationImage
+        brightMaskScaled
+        darkMaskScaled
     end
 
     methods
@@ -107,8 +108,11 @@ classdef spotWithAnnularContrastReversingGrating < edu.washington.riekelab.proto
 
             apertureDiameterPix = obj.rig.getDevice('Stage').um2pix(obj.apertureDiameter);
 
-            % Initial image: at t=0 cos=1, bright bars at bright peak, dark bars at dark peak
-            initialImage = uint8(max(0, min(255, round((obj.meanImage + obj.modulationImage) * 255))));
+            % Initial image: at t=0 cos=1 (positive), bright bars at bright peak, dark bars at dark trough
+            Ap = obj.currentBrightContrast;
+            An = abs(obj.currentDarkContrast);
+            initImage = obj.meanImage + obj.brightMaskScaled * Ap + obj.darkMaskScaled * (-An);
+            initialImage = uint8(max(0, min(255, round(initImage * 255))));
             scene = stage.builtin.stimuli.Image(initialImage);
             scene.size = canvasSize;
             scene.position = canvasSize/2;
@@ -158,40 +162,35 @@ classdef spotWithAnnularContrastReversingGrating < edu.washington.riekelab.proto
             r = sqrt(x.^2 + y.^2);
             annulusMask = (r >= annulusInnerDiameterPix/2) & (r <= annulusOuterDiameterPix/2);
 
-            % Asymmetric contrast-reversing sinusoid decomposition:
-            % Both bright and dark bars use the SAME asymmetric temporal
-            % waveform but 180 deg out of phase. The waveform oscillates
-            % between brightBarContrast (positive peak) and darkBarContrast
-            % (negative peak).
+            % Asymmetric contrast-reversing grating:
             %
-            % meanContrast = (bright + dark) / 2  (DC offset of the waveform)
-            % ampContrast  = (bright - dark) / 2  (half-amplitude of swing)
+            % Start from a symmetric sinusoid s(t) = cos(2*pi*f*t), then
+            % scale the positive half (above background) by brightBarContrast
+            % and the negative half (below background) by |darkBarContrast|.
+            % Both bars use the same asymmetric waveform, 180 deg out of phase,
+            % so both cross through background at the zero-crossings.
             %
-            % Bright bars: background * (1 + meanContrast + ampContrast * cos(2*pi*f*t))
-            %   -> at t=0: background * (1 + brightBarContrast)  [bright peak]
-            %   -> at t=T/2: background * (1 + darkBarContrast)  [dark peak]
+            % For bright bars (phase = 0, using s = cos):
+            %   s >= 0: intensity = background * (1 + brightBarContrast * s)
+            %   s <  0: intensity = background * (1 + |darkBarContrast| * s)
             %
-            % Dark bars: background * (1 + meanContrast - ampContrast * cos(2*pi*f*t))
-            %   -> at t=0: background * (1 + darkBarContrast)    [dark peak]
-            %   -> at t=T/2: background * (1 + brightBarContrast) [bright peak]
-            %
-            % This preserves the bright-to-dark intensity ratio at all times.
+            % For dark bars (phase = 180, using -s):
+            %   s >= 0: intensity = background * (1 - |darkBarContrast| * s)
+            %   s <  0: intensity = background * (1 - brightBarContrast * s)
 
-            meanContrast = (obj.currentBrightContrast + obj.currentDarkContrast) / 2;
-            ampContrast  = (obj.currentBrightContrast - obj.currentDarkContrast) / 2;
-
-            % Mean image: background in non-annulus, shifted mean in annulus
+            % Mean image: background everywhere
             obj.meanImage = obj.backgroundIntensity * ones(size(grating));
-            obj.meanImage(annulusMask) = obj.backgroundIntensity * (1 + meanContrast);
 
-            % Modulation image: cos amplitude per pixel (bright bars +, dark bars -)
-            obj.modulationImage = zeros(size(grating));
-            obj.modulationImage(brightBars & annulusMask) =  obj.backgroundIntensity * ampContrast;
-            obj.modulationImage(darkBars & annulusMask)   = -obj.backgroundIntensity * ampContrast;
+            % Pre-scaled masks: background intensity at bar pixels in annulus
+            obj.brightMaskScaled = zeros(size(grating));
+            obj.brightMaskScaled(brightBars & annulusMask) = obj.backgroundIntensity;
+
+            obj.darkMaskScaled = zeros(size(grating));
+            obj.darkMaskScaled(darkBars & annulusMask) = obj.backgroundIntensity;
 
             % Warn if peak modulation would produce out-of-range values
             peakHigh = obj.backgroundIntensity * (1 + obj.currentBrightContrast);
-            peakLow  = obj.backgroundIntensity * (1 + obj.currentDarkContrast);
+            peakLow  = obj.backgroundIntensity * (1 - abs(obj.currentDarkContrast));
             if peakHigh > 1 || peakLow < 0
                 warning('Grating intensity out of range: bright peak = %.3f, dark peak = %.3f', ...
                     peakHigh, peakLow);
@@ -200,8 +199,23 @@ classdef spotWithAnnularContrastReversingGrating < edu.washington.riekelab.proto
 
         function imgMat = getGratingFrame(obj, time)
             t = time - obj.preTime * 1e-3;  % time relative to stimulus onset
-            modulation = cos(2 * pi * obj.currentTemporalFrequency * t);
-            imgMat = obj.meanImage + obj.modulationImage * modulation;
+            s = cos(2 * pi * obj.currentTemporalFrequency * t);
+
+            Ap = obj.currentBrightContrast;
+            An = abs(obj.currentDarkContrast);
+
+            % Asymmetric scaling: positive half scaled by Ap, negative half by An
+            % Bright bars use cos (phase 0), dark bars use -cos (phase 180)
+            if s >= 0
+                imgMat = obj.meanImage ...
+                       + obj.brightMaskScaled * (Ap * s) ...
+                       + obj.darkMaskScaled * (-An * s);
+            else
+                imgMat = obj.meanImage ...
+                       + obj.brightMaskScaled * (An * s) ...
+                       + obj.darkMaskScaled * (-Ap * s);
+            end
+
             % Clamp to valid range and convert to uint8
             imgMat = uint8(max(0, min(255, round(imgMat * 255))));
         end
